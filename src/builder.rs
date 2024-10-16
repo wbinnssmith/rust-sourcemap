@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use debugid::DebugId;
 use rustc_hash::FxHashMap;
+use rustc_hash::FxHashSet;
 use url::Url;
 
 use crate::errors::Result;
@@ -28,6 +29,7 @@ pub struct SourceMapBuilder {
     sources: Vec<Arc<str>>,
     source_contents: Vec<Option<Arc<str>>>,
     sources_mapping: Vec<u32>,
+    ignore_list: FxHashSet<u32>,
     debug_id: Option<DebugId>,
 }
 
@@ -61,6 +63,7 @@ impl SourceMapBuilder {
             sources: vec![],
             source_contents: vec![],
             sources_mapping: vec![],
+            ignore_list: FxHashSet::default(),
             debug_id: None,
         }
     }
@@ -114,6 +117,10 @@ impl SourceMapBuilder {
     /// Looks up a source name for an ID.
     pub fn get_source(&self, src_id: u32) -> Option<&str> {
         self.sources.get(src_id as usize).map(|x| &x[..])
+    }
+
+    pub fn add_to_ignore_list(&mut self, src_id: u32) {
+        self.ignore_list.insert(src_id);
     }
 
     /// Sets the source contents for an already existing source.
@@ -301,7 +308,14 @@ impl SourceMapBuilder {
             None
         };
 
-        let mut sm = SourceMap::new(self.file, self.tokens, self.names, self.sources, contents);
+        let mut sm = SourceMap::new(
+            self.file,
+            self.tokens,
+            self.names,
+            self.sources,
+            contents,
+            self.ignore_list.iter().cloned().collect(),
+        );
         sm.set_source_root(self.source_root);
         sm.set_debug_id(self.debug_id);
 
