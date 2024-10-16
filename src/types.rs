@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::collections::btree_set;
+use std::collections::BTreeSet;
 use std::fmt;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -468,6 +470,7 @@ pub struct SourceMap {
     pub(crate) sources: Vec<Arc<str>>,
     pub(crate) sources_prefixed: Option<Vec<Arc<str>>>,
     pub(crate) sources_content: Vec<Option<SourceView>>,
+    pub(crate) ignore_list: BTreeSet<u32>,
     pub(crate) debug_id: Option<DebugId>,
 }
 
@@ -575,12 +578,14 @@ impl SourceMap {
     /// - `names`: a vector of names
     /// - `sources` a vector of source filenames
     /// - `sources_content` optional source contents
+    /// - `ignore_list` optional list of source indexes for devtools to ignore
     pub fn new(
         file: Option<Arc<str>>,
         mut tokens: Vec<RawToken>,
         names: Vec<Arc<str>>,
         sources: Vec<Arc<str>>,
         sources_content: Option<Vec<Option<Arc<str>>>>,
+        ignore_list: Option<Vec<u32>>,
     ) -> SourceMap {
         tokens.sort_unstable_by_key(|t| (t.dst_line, t.dst_col));
         SourceMap {
@@ -595,6 +600,10 @@ impl SourceMap {
                 .into_iter()
                 .map(|opt| opt.map(SourceView::new))
                 .collect(),
+            ignore_list: match ignore_list {
+                Some(ignore_list) => ignore_list.into_iter().collect(),
+                None => BTreeSet::default(),
+            },
             debug_id: None,
         }
     }
@@ -653,6 +662,14 @@ impl SourceMap {
             }
             None => self.sources_prefixed = None,
         }
+    }
+
+    pub fn add_to_ignore_list(&mut self, src_id: u32) {
+        self.ignore_list.insert(src_id);
+    }
+
+    pub fn ignore_list(&self) -> btree_set::Iter<'_, u32> {
+        self.ignore_list.iter()
     }
 
     /// Looks up a token by its index.
@@ -1204,6 +1221,9 @@ impl SourceMapIndex {
                         raw.src_id,
                         map.get_source_contents(token.get_src_id()),
                     );
+                }
+                if map.ignore_list.contains(&token.get_src_id()) {
+                    builder.add_to_ignore_list(raw.src_id);
                 }
             }
         }
